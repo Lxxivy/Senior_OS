@@ -1,1 +1,0 @@
-# AIOS memory subsystem
