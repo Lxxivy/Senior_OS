@@ -21,7 +21,7 @@
 
 ```text
 E:\OS
- ├── doc/               # 项目文档（设计说明书、测试报告等）
+ ├── doc/               # 项目文档（设计说明书、测试报告、参考文档等）
  ├── src/               # 核心竞赛代码
  │    ├── agents/       # 各智能体 Prompt 与逻辑定义 (Planner, Coder等)
  │    ├── scheduler/    # 并行任务调度与依赖控制 (DAG 图管理)
@@ -73,3 +73,4 @@ python main.py --task "开发一个具备用户登录与数据存储的轻量级
 
 ---
 *本项目底层依赖 [AIOS](https://github.com/agiresearch/AIOS) 开源项目。*
+*当前README文件中的内容仅是一个例子，不代表最终参赛作品*
