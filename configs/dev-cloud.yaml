@@ -1,0 +1,80 @@
+# ============================================================================
+# 开发期配置：云端模型（本机无需 GPU）
+# ----------------------------------------------------------------------------
+# 用途：M1–M3 阶段写代码、调 DAG、跑功能测试与"结构加速"验证。
+# 切换到端侧：把这份文件换成 configs/edge-vllm.yaml（两个文件字段完全一致，
+# 只有 llms.models / 并发参数不同），代码与 DAG 不需要任何改动。
+#
+# 关键写法：任何 OpenAI 兼容的云端端点，都用 backend: "vllm"
+#   （AIOS 的 vllm/sglang 分支 = "OpenAI 兼容 base_url + api_key"，
+#    见 aios/llm_core/adapter.py:243-252）
+#   这样不用为每家厂商改代码。
+# ============================================================================
+
+api_keys:
+  openai: ""
+  # 建议从环境变量注入，避免把 key 写进仓库：
+  #   $env:OPENAI_API_KEY = "sk-..."
+  # 或将 key 填在下面 llms.models[].api_key（不推荐提交到 git）
+
+llms:
+  models:
+    # ---- 示例 1：vLLM/SGLang 官方 OpenAI 兼容服务（本地或云主机）----
+    # - name: "Qwen2.5-7B-Instruct"
+    #   backend: "vllm"
+    #   hostname: "http://127.0.0.1:8001/v1"
+    #   api_key: "sk-placeholder"
+
+    # ---- 示例 2：阿里云 DashScope 兼容模式（云端开发常用）----
+    # 需先 pip install openai（AIOS 已依赖）
+    - name: "qwen-plus"
+      backend: "openai"
+      hostname: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      api_key: ""            # 从环境变量 DASHSCOPE_API_KEY 注入
+
+    # ---- 示例 3：DeepSeek（便宜、JSON 输出稳，适合做 Planner/Coder）----
+    # - name: "deepseek-chat"
+    #   backend: "openai"
+    #   hostname: "https://api.deepseek.com/v1"
+    #   api_key: ""
+
+  router:
+    strategy: "sequential"   # 单模型时无影响；多模型时才是"轮询 vs 亲和"的差别
+    bootstrap_url: "https://drive.google.com/file/d/1SF7MAvtnsED7KMeMdW3JDIWYNGPwIwL7/view"
+
+  log_mode: "console"
+  use_context_manager: false # RR 调度器有 bug（rr_scheduler.py:181），必须关
+
+memory:
+  log_mode: "console"
+  provider: "in-house"       # 开发期用 in-house，避免额外服务依赖
+  auto_extract: false        # 打开会增加 LLM 调用与费用，演示前再评估
+  auto_inject: false
+  relevance_threshold: 0.5
+  max_injected_memories: 5
+  max_memory_tokens: 1500
+  write_barrier:
+    enabled: true
+    timeout_ms: 5000
+
+storage:
+  root_dir: "root"
+  use_vector_db: true        # 依赖 Redis（filesystem/lsfs.py:114），没装可设 false
+
+tool:
+  mcp_server_script_path: "aios/tool/mcp_server.py"
+
+scheduler:
+  log_mode: "console"
+  # 云端延迟高且抖动（200ms–2s），攒批窗口可以更小：
+  #   batch_interval 越小，交互越及时；云端 SDK 的 RTT 本身就是主要等待，
+  #   因此开发期建议 0.1–0.2s，专注验证调度逻辑而不是省 GPU。
+  batch_interval: 0.2
+
+agent_factory:
+  log_mode: "console"
+  max_workers: 16            # 云端并发过高会触发限流（429），16 是安全值
+
+server:
+  host: "localhost"
+  port: 8000

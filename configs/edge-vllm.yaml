@@ -1,0 +1,73 @@
+# ============================================================================
+# 验收期配置：端侧/本地 7B（vLLM 或 SGLang，OpenAI 兼容端点）
+# ----------------------------------------------------------------------------
+# 用途：M4 之后的真机验收与答辩演示——赛题要求的"端侧大模型 7B/8B"。
+# 与 configs/dev-cloud.yaml 字段完全一致，切换只需换文件 + 改 llms.models。
+#
+# 典型启动（租用 1×A10/L4/4090 云主机，或本地 24GB 显存）：
+#   pip install vllm
+#   vllm serve Qwen/Qwen2.5-7B-Instruct \
+#       --port 8001 --max-model-len 8192 \
+#       --enable-prefix-caching \
+#       --gpu-memory-utilization 0.90
+#   # 然后在 AIOS 里把 llms.models 指向 http://127.0.0.1:8001/v1
+#
+# --enable-prefix-caching 很重要：配合"角色亲和提交"（doc/18 D3）
+# 可以把同 system prompt 的请求命中前缀缓存，端侧延迟显著下降。
+# ============================================================================
+
+api_keys:
+  openai: ""
+
+llms:
+  models:
+    - name: "Qwen/Qwen2.5-7B-Instruct"   # 换成实际部署的模型名
+      backend: "vllm"
+      hostname: "http://127.0.0.1:8001/v1"
+      api_key: "sk-placeholder"          # vLLM 默认不校验，占位即可
+
+  router:
+    strategy: "sequential"   # 单实例设为 sequential；多实例才用亲和路由
+  log_mode: "console"
+  use_context_manager: false # 必须关，RR 有 bug
+
+memory:
+  log_mode: "console"
+  provider: "in-house"
+  auto_extract: false
+  auto_inject: false
+  relevance_threshold: 0.5
+  max_injected_memories: 5
+  max_memory_tokens: 1500
+  write_barrier:
+    enabled: true
+    timeout_ms: 5000
+
+storage:
+  root_dir: "root"
+  use_vector_db: false       # 端侧常无 Redis；false 可减少部署依赖
+  # 注意：D5 事务化工作区若依赖版本历史（lsfs.py 的 Redis 版本链），
+  # 端侧验收要么带 Redis，要么改走 git worktree 方案（doc/18 D5 降级路径）。
+
+tool:
+  mcp_server_script_path: "aios/tool/mcp_server.py"
+
+scheduler:
+  log_mode: "console"
+  # 端侧是 7B 单卡：batch 越大 GPU 利用率越高，但单请求延迟越高。
+  # 演示用 0.2s（交互优先）；跑吞吐实验可回到 1.0s。
+  batch_interval: 0.2
+  # D2 自适应批窗口的开关（patch 后生效）：
+  # adaptive_window:
+  #   enabled: true
+  #   k_min_requests: 2       # 队列 ≥2 才愿意等满一批
+  #   max_wait_ms: 200        # 最老请求等待上限
+  #   slack_threshold_s: 1.0  # 关键路径余量小于该值时立即发车
+
+agent_factory:
+  log_mode: "console"
+  max_workers: 4             # 端侧线程数不宜大；真正并行度由调度器槽位控制
+
+server:
+  host: "localhost"
+  port: 8000

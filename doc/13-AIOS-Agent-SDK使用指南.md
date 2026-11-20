@@ -382,7 +382,34 @@ def run_dag(dag, prompts):
 
 ---
 
-## 7. 端侧 7B/8B 模型怎么接
+## 7. 模型怎么接：开发期云端 → 验收期端侧 7B/8B
+
+> 现实节奏：**开发期用云端模型**（本机无 GPU 也能写代码、调 DAG），**验收期再租云 GPU 跑真端侧 7B**。
+> 两份现成配置在 `configs/dev-cloud.yaml`（开发）与 `configs/edge-vllm.yaml`（验收），字段完全一致，切换只换文件。
+> 完整的阶段划分、迁移检查清单与预算见 `doc/18` §5.5。
+
+### 7.1 开发期：任何 OpenAI 兼容云端端点
+
+AIOS 的 `vllm|sglang` 分支实现就是"`base_url` + `api_key` 的 OpenAI 客户端"（`aios/llm_core/adapter.py:243-252`），
+所以 DashScope / DeepSeek / Moonshot / 自建网关**都填 `backend: "vllm"`**，不用为每家厂商改代码：
+
+```yaml
+llms:
+  models:
+    - name: "deepseek-chat"                                    # 或 qwen-plus
+      backend: "vllm"                                           # ★ 不是 "openai"，见上
+      hostname: "https://api.deepseek.com/v1"
+      api_key: "sk-..."                                         # 建议用环境变量注入，别提交
+  use_context_manager: false
+```
+
+注意事项（都是踩过的）：
+
+- **并发上限**：云端限流比端侧严厉，`agent_factory.max_workers` 先设 16；4 角色并发 429 时降到 8 并加指数退避。
+- **不要依赖原生 tool-call**：端侧 7B 的 function calling 不可靠，开发期就用 `llm_chat_with_json_output` + 本地 schema 校验（§4），迁移零改动。
+- **云端数字只能标 `dev(cloud)`**：网络 RTT 会掩盖调度收益，**赛题加速比只用端侧数字**（见 `doc/18` §5.5 写法约束）。
+
+### 7.2 验收期：端侧 7B，编辑内核配置
 
 编辑**内核**的 `aios/config/config.yaml`（不是 SDK 的 `config.yaml`）：
 
@@ -507,3 +534,4 @@ vllm serve Qwen/Qwen2.5-7B-Instruct --port 8091 --max-model-len 8192
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-11-18 | 首版：基于 Cerebrum `ab7e434` 快照核对四类 API、Agent 三件套、内核配置、十个坑、赛题骨架与 15 项自测清单 |
+| 2026-11-21 | v1.1：§7 改写为「开发期云端 → 验收期端侧」两阶段接法，新增 §7.1（OpenAI 兼容端点统一用 `backend: vllm`、并发上限、禁用原生 tool-call、云端数字标注规则），并指向 `configs/dev-cloud.yaml`、`configs/edge-vllm.yaml` 与 `doc/18` §5.5 |
