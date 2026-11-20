@@ -1,2 +1,4 @@
 build/
 acl-recovery/
+__pycache__/
+*.pyc
